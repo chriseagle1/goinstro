@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"gointro/cmd/pipeline"
 	"os"
+	"strconv"
 )
 
 func main() {
-	p := CreatePipeline("large.in", 4)
-	writeToFile("large.out", p)
+	p := CreateNetworkPipeline("small.in", 4)
+	writeToFile("small.out", p)
 
-	printFile("large.out")
+	printFile("small.out")
 }
 
 func printFile(filename string) {
@@ -74,4 +75,36 @@ func getFileSize(file *os.File) int {
 	fileSize := fi.Size()
 
 	return int(fileSize)
+}
+
+func CreateNetworkPipeline(filename string, chunkCount int) <-chan int{
+	pipeline.Init()
+	addrResult := []string{}
+	//
+	for i := 0; i < chunkCount; i++ {
+		file, err := os.Open(filename)
+		if err != nil {
+			panic(err)
+		}
+		fileSize := getFileSize(file)
+		chunkSize := fileSize/chunkCount
+
+		file.Seek(int64(i * chunkSize), 0)
+		source := pipeline.ReadSource(bufio.NewReader(file), chunkSize)
+
+		sort := pipeline.Sort(source)
+
+		addr := ":" + strconv.Itoa(7000 + i)
+		pipeline.NetworkSink(addr, sort)
+		addrResult = append(addrResult, addr)
+	}
+
+	sortResult := []<-chan int{}
+
+	for _, port := range addrResult{
+		p := pipeline.NetworkReadSource(port)
+		sortResult = append(sortResult, p)
+	}
+
+	return pipeline.MergeN(sortResult...)
 }
